@@ -268,6 +268,10 @@ class FloatingLyricsWindow(
     private fun applyStyle(view: TextView) {
         val style = FloatingLyricsStyleStore.getStyle(context)
 
+        (view as? FloatingLyricsTextView)?.apply {
+            outlineWidthPx = style.outlineWidth * resources.displayMetrics.density
+            outlineColor = style.outlineColor
+        }
         view.textSize = style.textSizeSp
         FloatingLyricsFontStore.applyTypeface(
             view,

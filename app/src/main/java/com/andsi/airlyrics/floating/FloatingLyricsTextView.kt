@@ -7,6 +7,8 @@ import android.animation.ValueAnimator
 import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
 import androidx.appcompat.widget.AppCompatTextView
 import androidx.core.graphics.withSave
 import kotlin.math.roundToInt
@@ -19,6 +21,11 @@ import kotlin.math.roundToInt
  */
 internal class FloatingLyricsTextView(context: Context) : AppCompatTextView(context),
     LyricsTextAnimationTarget {
+
+    var outlineWidthPx: Float = 0f
+        set(value) { field = value.coerceAtLeast(0f); invalidate() }
+    var outlineColor: Int = Color.WHITE
+        set(value) { field = value; invalidate() }
 
     internal var onWindowConfigurationChanged: (() -> Unit)? = null
 
@@ -112,6 +119,19 @@ internal class FloatingLyricsTextView(context: Context) : AppCompatTextView(cont
                 width / 2f,
                 height / 2f
             )
+            if (outlineWidthPx > 0f) {
+                val originalStyle = paint.style
+                val originalColor = paint.color
+                val originalStroke = paint.strokeWidth
+                paint.style = Paint.Style.STROKE
+                paint.strokeJoin = Paint.Join.ROUND
+                paint.strokeWidth = outlineWidthPx * 2f
+                paint.color = outlineColor
+                super.onDraw(this)
+                paint.style = originalStyle
+                paint.color = originalColor
+                paint.strokeWidth = originalStroke
+            }
             if (lyricContentAlpha >= REST_ALPHA) {
                 super.onDraw(this)
             } else {

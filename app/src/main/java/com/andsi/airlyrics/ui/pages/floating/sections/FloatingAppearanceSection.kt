@@ -318,6 +318,20 @@ internal fun FloatingPageScope.addAppearanceSection(list: LinearLayout) = with(h
                             applyFloatingShadowColor(color)
                             refreshFloatingPreview()
                         })
+                        addView(sliderRow(
+                            title = "Text outline (0 = off, 0.5 steps)",
+                            value = (style().outlineWidth * 2f).toInt(),
+                            min = 0,
+                            max = 6,
+                            suffix = " × 0.5 dp"
+                        ) { value ->
+                            applyFloatingStyle(style().copy(outlineWidth = value / 2f))
+                            refreshFloatingPreview()
+                        })
+                        addView(colorControl("Outline color", style().outlineColor, includeOpacity = false) { color ->
+                            applyFloatingStyle(style().copy(outlineColor = color))
+                            refreshFloatingPreview()
+                        })
                     }
                 }
             ),

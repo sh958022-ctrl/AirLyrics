@@ -119,32 +119,32 @@ internal class FloatingLyricsTextView(context: Context) : AppCompatTextView(cont
                 width / 2f,
                 height / 2f
             )
+            // TextView resets paint.color from its ColorStateList in onDraw.
+            // Temporarily override that list for the stroke pass, then restore it.
+            val alpha = (lyricContentAlpha * 255f).roundToInt()
+            if (alpha < 255) {
+                saveLayerAlpha(0f, 0f, width.toFloat(), height.toFloat(), alpha)
+            }
             if (outlineWidthPx > 0f) {
+                val originalColors = textColors
                 val originalStyle = paint.style
-                val originalColor = paint.color
                 val originalStroke = paint.strokeWidth
-                paint.style = Paint.Style.STROKE
-                paint.strokeJoin = Paint.Join.ROUND
-                paint.strokeWidth = outlineWidthPx * 2f
-                paint.color = outlineColor
-                super.onDraw(this)
-                paint.style = originalStyle
-                paint.color = originalColor
-                paint.strokeWidth = originalStroke
+                val originalJoin = paint.strokeJoin
+                try {
+                    setTextColor(outlineColor)
+                    paint.style = Paint.Style.STROKE
+                    paint.strokeJoin = Paint.Join.ROUND
+                    paint.strokeWidth = outlineWidthPx * 2f
+                    super.onDraw(this)
+                } finally {
+                    paint.style = originalStyle
+                    paint.strokeJoin = originalJoin
+                    paint.strokeWidth = originalStroke
+                    setTextColor(originalColors)
+                }
             }
-            if (lyricContentAlpha >= REST_ALPHA) {
-                super.onDraw(this)
-            } else {
-                val layerSaveCount = saveLayerAlpha(
-                    0f,
-                    0f,
-                    width.toFloat(),
-                    height.toFloat(),
-                    (lyricContentAlpha * 255f).roundToInt()
-                )
-                super.onDraw(this)
-                restoreToCount(layerSaveCount)
-            }
+            super.onDraw(this)
+
         }
     }
 

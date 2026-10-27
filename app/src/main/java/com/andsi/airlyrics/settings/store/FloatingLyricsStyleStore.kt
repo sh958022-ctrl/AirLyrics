@@ -198,7 +198,7 @@ object FloatingLyricsStyleStore {
     }
 
     fun setTextSize(context: Context, textSizeSp: Float) {
-        prefs(context).setFloat(KEY_TEXT_SIZE, textSizeSp.coerceIn(14f, 56f))
+        prefs(context).setFloat(KEY_TEXT_SIZE, (kotlin.math.round(textSizeSp * 2f) / 2f).coerceIn(6f, 56f))
     }
 
     fun setTextColor(context: Context, color: Int) {
@@ -258,7 +258,7 @@ object FloatingLyricsStyleStore {
     }
 
     fun setMaxWidthPercent(context: Context, percent: Int) {
-        prefs(context).setInt(KEY_MAX_WIDTH_PERCENT, percent.coerceIn(45, 100))
+        prefs(context).setInt(KEY_MAX_WIDTH_PERCENT, percent.coerceIn(10, 100))
     }
 
     fun setLocked(context: Context, locked: Boolean) {

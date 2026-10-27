@@ -108,8 +108,11 @@ class FloatingLyricsWindow(
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             if (Build.VERSION.SDK_INT >= 30) {
-                setFitInsetsTypes(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
-                setFitInsetsIgnoringVisibility(true)
+                // Use the full display frame so the overlay can reach the status bar.
+                // Android may still restrict cutout placement for application overlays.
+                setFitInsetsTypes(0)
+                layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
             }
         }
 
@@ -326,12 +329,8 @@ class FloatingLyricsWindow(
     @Suppress("DEPRECATION")
     private fun availableSize(view: View): Pair<Int, Int> {
         if (Build.VERSION.SDK_INT >= 30) {
-            val metrics = windowManager.currentWindowMetrics
-            val insets = metrics.windowInsets.getInsetsIgnoringVisibility(
-                WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout()
-            )
-            return (metrics.bounds.width() - insets.left - insets.right).coerceAtLeast(1) to
-                (metrics.bounds.height() - insets.top - insets.bottom).coerceAtLeast(1)
+            val bounds = windowManager.currentWindowMetrics.bounds
+            return bounds.width().coerceAtLeast(1) to bounds.height().coerceAtLeast(1)
         }
         // Before WindowMetrics, the attached view exposes the display frame fitted by WM.
         // Subtracting rootWindowInsets again would double-count already fitted system bars.

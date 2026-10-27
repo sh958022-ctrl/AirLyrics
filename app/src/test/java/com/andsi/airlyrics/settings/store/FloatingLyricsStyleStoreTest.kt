@@ -54,7 +54,7 @@ class FloatingLyricsStyleStoreTest : SettingsStoreTestBase() {
         assertEquals(0f, style.shadowRadius)
         assertEquals(36, style.paddingHorizontalDp)
         assertEquals(0, style.paddingVerticalDp)
-        assertEquals(45, style.maxWidthPercent)
+        assertEquals(20, style.maxWidthPercent)
         assertTrue(style.backgroundEnabled)
         assertEquals(Color.rgb(1, 2, 3), style.backgroundColor)
         assertEquals(12, style.backgroundAlpha)

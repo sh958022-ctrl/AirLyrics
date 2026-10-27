@@ -137,7 +137,7 @@ internal fun FloatingPageScope.addAppearanceSection(list: LinearLayout) = with(h
             trackedFloatingTile(
                 id = FloatingPanelId.TEXT_SIZE,
                 title = getString(R.string.ui_font_size),
-                subtitle = "${style().textSizeSp.toInt()} sp",
+                subtitle = "${style().textSizeSp} sp",
                 iconRes = R.drawable.ic_air_format_size,
                 onClick = { tile ->
                     openPanel(
@@ -152,16 +152,16 @@ internal fun FloatingPageScope.addAppearanceSection(list: LinearLayout) = with(h
                         addView(
                             sliderRow(
                                 title = getString(R.string.ui_size),
-                                value = style().textSizeSp.toInt(),
-                                min = 14,
-                                max = 56,
-                                suffix = " sp",
+                                value = (style().textSizeSp * 2).toInt(),
+                                min = 12,
+                                max = 112,
+                                suffix = " × 0.5 sp",
                                 onChangeFinished = { value ->
-                                    applyFloatingTextSize(value.toFloat(), refreshPage = false)
+                                    applyFloatingTextSize(value / 2f, refreshPage = false)
                                     refreshFloatingPreview()
                                 }
                             ) { value ->
-                                previewFloatingTextSize(value.toFloat())
+                                previewFloatingTextSize(value / 2f)
                             }
                         )
                     }
@@ -348,7 +348,7 @@ internal fun FloatingPageScope.addAppearanceSection(list: LinearLayout) = with(h
                             }
                         )
                     ) {
-                        addView(sliderRow(getString(R.string.ui_max_width), style().maxWidthPercent, 45, 100, "%") { value ->
+                        addView(sliderRow(getString(R.string.ui_max_width), style().maxWidthPercent, 10, 100, "%") { value ->
                             applyFloatingMaxWidthPercent(value)
                             refreshFloatingPreview()
                         })

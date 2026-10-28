@@ -68,6 +68,7 @@ class FloatingLyricsWindow(
         val view = lyricsView ?: return
         remapPending = remapPending || remap
         view.removeCallbacks(refreshLayout)
+        if (gestureActive) return
         view.post(refreshLayout)
     }
 
@@ -199,6 +200,7 @@ class FloatingLyricsWindow(
 
         return when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                view.removeCallbacks(refreshLayout)
                 gestureActive = true
                 dragging = false
                 startX = p.x
@@ -246,12 +248,14 @@ class FloatingLyricsWindow(
                 }
                 if (!isLocked && dragging) saveDraggedPosition(p)
                 gestureActive = false
+                scheduleLayout()
                 true
             }
 
             MotionEvent.ACTION_CANCEL -> {
                 if (gestureActive) scheduleLayout(remap = true)
                 gestureActive = false
+                scheduleLayout()
                 true
             }
 
@@ -322,7 +326,7 @@ class FloatingLyricsWindow(
         val p = params ?: return
         runCatching {
             if (remap) applyStyle(view)
-            if (calculateLayout(view, p, remap)) windowManager.updateViewLayout(view, p)
+            if (!gestureActive && calculateLayout(view, p, remap)) windowManager.updateViewLayout(view, p)
         }.onFailure {
             Log.w("FloatingLyricsWindow", "Unable to update overlay geometry", it)
             hideAfterFailure()
@@ -364,7 +368,8 @@ class FloatingLyricsWindow(
         val previous = geometry
         val areaChanged = previous == null || previous.availableWidth != availableWidth ||
             previous.availableHeight != availableHeight
-        if (areaChanged) gestureActive = false
+        // A layout pass during a drag must not cancel the active gesture.
+        if (areaChanged && !gestureActive) dragging = false
         val relative = position ?: run {
             val (x, y) = FloatingLyricsStyleStore.getPosition(context)
             val initial = if (FloatingLyricsStyleStore.hasLegacyPosition(context)) {

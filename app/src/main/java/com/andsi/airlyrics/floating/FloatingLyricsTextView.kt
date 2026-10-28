@@ -7,6 +7,8 @@ import android.animation.ValueAnimator
 import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
 import androidx.appcompat.widget.AppCompatTextView
 import androidx.core.graphics.withSave
 import kotlin.math.roundToInt
@@ -19,6 +21,11 @@ import kotlin.math.roundToInt
  */
 internal class FloatingLyricsTextView(context: Context) : AppCompatTextView(context),
     LyricsTextAnimationTarget {
+
+    var outlineWidthPx: Float = 0f
+        set(value) { field = value.coerceAtLeast(0f); invalidate() }
+    var outlineColor: Int = Color.WHITE
+        set(value) { field = value; invalidate() }
 
     internal var onWindowConfigurationChanged: (() -> Unit)? = null
 
@@ -112,19 +119,32 @@ internal class FloatingLyricsTextView(context: Context) : AppCompatTextView(cont
                 width / 2f,
                 height / 2f
             )
-            if (lyricContentAlpha >= REST_ALPHA) {
-                super.onDraw(this)
-            } else {
-                val layerSaveCount = saveLayerAlpha(
-                    0f,
-                    0f,
-                    width.toFloat(),
-                    height.toFloat(),
-                    (lyricContentAlpha * 255f).roundToInt()
-                )
-                super.onDraw(this)
-                restoreToCount(layerSaveCount)
+            // TextView resets paint.color from its ColorStateList in onDraw.
+            // Temporarily override that list for the stroke pass, then restore it.
+            val alpha = (lyricContentAlpha * 255f).roundToInt()
+            if (alpha < 255) {
+                saveLayerAlpha(0f, 0f, width.toFloat(), height.toFloat(), alpha)
             }
+            if (outlineWidthPx > 0f) {
+                val originalColors = textColors
+                val originalStyle = paint.style
+                val originalStroke = paint.strokeWidth
+                val originalJoin = paint.strokeJoin
+                try {
+                    setTextColor(outlineColor)
+                    paint.style = Paint.Style.STROKE
+                    paint.strokeJoin = Paint.Join.ROUND
+                    paint.strokeWidth = outlineWidthPx * 2f
+                    super.onDraw(this)
+                } finally {
+                    paint.style = originalStyle
+                    paint.strokeJoin = originalJoin
+                    paint.strokeWidth = originalStroke
+                    setTextColor(originalColors)
+                }
+            }
+            super.onDraw(this)
+
         }
     }
 

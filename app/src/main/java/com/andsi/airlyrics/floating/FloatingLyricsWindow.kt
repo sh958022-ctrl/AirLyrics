@@ -283,6 +283,9 @@ class FloatingLyricsWindow(
             style.fontWeight
         )
         view.setTextColor(style.textColor)
+        // Keep the bubble at least one status-bar row tall even for short lyrics.
+        // Text exceeding the minimum continues to expand naturally.
+        view.minHeight = dp(28)
         view.gravity = style.gravity
         view.textAlignment = View.TEXT_ALIGNMENT_GRAVITY
         view.setPadding(

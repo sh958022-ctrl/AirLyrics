@@ -24,6 +24,7 @@ object FloatingLyricsStyleStore {
     private const val KEY_SHADOW_RADIUS = "shadow_radius"
     private const val KEY_OUTLINE_WIDTH = "outline_width"
     private const val KEY_OUTLINE_COLOR = "outline_color"
+    private const val KEY_CAMERA_SPLIT = "camera_split_enabled"
     private const val KEY_BACKGROUND_ENABLED = "background_enabled"
     private const val KEY_BACKGROUND_COLOR = "background_color"
     private const val KEY_BACKGROUND_ALPHA = "background_alpha"
@@ -120,6 +121,7 @@ object FloatingLyricsStyleStore {
             shadowRadius = prefs.getFloat(KEY_SHADOW_RADIUS, 8f),
             outlineWidth = prefs.getFloat(KEY_OUTLINE_WIDTH, 0f),
             outlineColor = prefs.getInt(KEY_OUTLINE_COLOR, Color.WHITE),
+            cameraSplitEnabled = prefs.getBoolean(KEY_CAMERA_SPLIT, false),
             backgroundEnabled = prefs.getBoolean(KEY_BACKGROUND_ENABLED, true),
             backgroundColor = prefs.getInt(KEY_BACKGROUND_COLOR, Color.rgb(10, 14, 24)),
             backgroundAlpha = prefs.getInt(KEY_BACKGROUND_ALPHA, 170),
@@ -169,6 +171,7 @@ object FloatingLyricsStyleStore {
             putFloat(KEY_SHADOW_RADIUS, style.shadowRadius)
             putFloat(KEY_OUTLINE_WIDTH, style.outlineWidth.coerceIn(0f, 3f))
             putInt(KEY_OUTLINE_COLOR, style.outlineColor)
+            putBoolean(KEY_CAMERA_SPLIT, style.cameraSplitEnabled)
             putBoolean(KEY_BACKGROUND_ENABLED, style.backgroundEnabled)
             putInt(KEY_BACKGROUND_COLOR, style.backgroundColor)
             putInt(KEY_BACKGROUND_ALPHA, style.backgroundAlpha)

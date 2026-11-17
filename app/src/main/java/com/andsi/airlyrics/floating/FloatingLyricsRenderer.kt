@@ -33,6 +33,7 @@ class FloatingLyricsRenderer(
     private val textViewProvider: () -> TextView?,
     private val contentModeProvider: () -> LyricsContentDisplayMode = { LyricsContentDisplayMode.default },
     private val lineModeProvider: () -> LyricsLineDisplayMode = { LyricsLineDisplayMode.default },
+    private val cameraSplitEnabledProvider: () -> Boolean = { false },
     private val switchAnimationModeProvider: () -> LyricsSwitchAnimationMode = { LyricsSwitchAnimationMode.default },
     private val wordByWordLyricsEnabledProvider: () -> Boolean = { false },
     private val wordByWordHighlightColorProvider: () -> Int = { Color.rgb(120, 220, 255) },
@@ -200,6 +201,9 @@ class FloatingLyricsRenderer(
     }
 
     private fun renderAtCurrentPosition(): CharSequence {
+        if (cameraSplitEnabledProvider() && lineModeProvider() == LyricsLineDisplayMode.CURRENT_AND_NEXT) {
+            return renderCameraSplitAtCurrentPosition()
+        }
         val primary = renderPrimaryAtCurrentPosition()
         if (!wordByWordLyricsEnabledProvider() || contentModeProvider() == LyricsContentDisplayMode.TRANSLATION_ONLY) return primary
         val position = getEstimatedPositionMs()
@@ -211,6 +215,38 @@ class FloatingLyricsRenderer(
                 append(wordByWordLineSpan(line, line.text, position))
             }
         }
+    }
+
+    // The two halves must stay distinct: a newline is legal within a lyric/translation.
+    private fun renderCameraSplitAtCurrentPosition(): CharSequence {
+        val timeMs = getEstimatedPositionMs()
+        val currentIndex = LrcParser.findCurrentIndex(currentPlainLines, timeMs)
+        if (currentIndex != null) {
+            val nextIndex = (currentIndex + 1..currentPlainLines.lastIndex).firstOrNull { i ->
+                val line = currentPlainLines[i]
+                !line.isMetadata && (line.text.isNotBlank() || line.hasTranslation())
+            }
+            val current = PlainLyricsDisplayFormatter.format(
+                currentPlainLines, currentIndex, contentModeProvider(),
+                LyricsLineDisplayMode.CURRENT_ONLY, noTranslationTextProvider()
+            )
+            val next = nextIndex?.let {
+                PlainLyricsDisplayFormatter.format(
+                    currentPlainLines, it, contentModeProvider(),
+                    LyricsLineDisplayMode.CURRENT_ONLY, noTranslationTextProvider()
+                )
+            }.orEmpty()
+            return SpannableStringBuilder(current).append(CAMERA_SPLIT_SEPARATOR).append(next)
+        }
+        val wordIndex = if (currentWordByWordLines.isNotEmpty())
+            findCurrentWordByWordIndex(timeMs) else null
+        if (wordIndex != null) {
+            val current = wordByWordOriginalText(currentWordByWordLines[wordIndex])
+            val next = currentWordByWordLines.getOrNull(wordIndex + 1)
+                ?.let(::wordByWordOriginalText).orEmpty()
+            return "$"+"{current}$"+"{CAMERA_SPLIT_SEPARATOR}$"+"{next}"
+        }
+        return ""
     }
 
     private fun renderPrimaryAtCurrentPosition(): CharSequence {
@@ -494,12 +530,16 @@ class FloatingLyricsRenderer(
     private fun setTextImmediately(text: CharSequence) {
         val view = textViewProvider() ?: return
         resetTextAnimationState(view)
-        view.text = credited(text)
+        view.text = if (cameraSplitEnabledProvider() && lineModeProvider() == LyricsLineDisplayMode.CURRENT_AND_NEXT) text else credited(text)
         lastRenderedText = text.toString()
     }
 
     private fun setTextWithOptionalAnimation(text: CharSequence) {
         val textKey = text.toString()
+        if (cameraSplitEnabledProvider() && lineModeProvider() == LyricsLineDisplayMode.CURRENT_AND_NEXT) {
+            if (textKey != lastRenderedText) setTextImmediately(text)
+            return
+        }
         val isWordByWordTick = wordByWordLyricsEnabledProvider() && currentWordByWordLines.isNotEmpty()
         if (!isWordByWordTick && textKey == lastRenderedText) return
 

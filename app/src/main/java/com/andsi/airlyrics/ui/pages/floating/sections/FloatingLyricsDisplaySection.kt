@@ -123,4 +123,20 @@ internal fun FloatingPageScope.addLyricsDisplaySection(list: LinearLayout) = wit
             )
         )
     )
+    // Separate opt-in layout; the ordinary Current + Next vertical mode is retained.
+    val splitButton = actionButton(
+        host,
+        if (style().cameraSplitEnabled) "Camera-hole split: ON" else "Camera-hole split: OFF"
+    ) { }
+    splitButton.setOnClickListener {
+        val enabled = !style().cameraSplitEnabled
+        applyFloatingStyle(style().copy(cameraSplitEnabled = enabled))
+        if (enabled && lineDisplayMode() != LyricsLineDisplayMode.CURRENT_AND_NEXT) {
+            setLyricsLineDisplayMode(LyricsLineDisplayMode.CURRENT_AND_NEXT)
+        }
+        splitButton.text = if (enabled) "Camera-hole split: ON" else "Camera-hole split: OFF"
+        applyLyricsDisplaySettingsChanged()
+        refreshFloatingPreview()
+    }
+    list.addView(splitButton)
 }

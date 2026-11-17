@@ -19,6 +19,8 @@ import android.widget.TextView
 import com.andsi.airlyrics.R
 import com.andsi.airlyrics.core.color.AirColorUtils
 import com.andsi.airlyrics.core.model.FloatingPosition
+import com.andsi.airlyrics.core.model.LyricsLineDisplayMode
+import com.andsi.airlyrics.settings.store.LyricsSettingsStore
 import com.andsi.airlyrics.settings.store.FloatingLyricsFontStore
 import com.andsi.airlyrics.settings.store.FloatingLyricsStyleStore
 import kotlin.math.abs
@@ -49,6 +51,7 @@ class FloatingLyricsWindow(
     private var geometry: FloatingWindowGeometry? = null
     private var gestureActive = false
     private var dragging = false
+    private var wasCameraSplit = false
     private var remapPending = false
     private val refreshLayout = Runnable {
         val remap = remapPending
@@ -68,6 +71,7 @@ class FloatingLyricsWindow(
         val view = lyricsView ?: return
         remapPending = remapPending || remap
         view.removeCallbacks(refreshLayout)
+        if (gestureActive) return
         view.post(refreshLayout)
     }
 
@@ -108,8 +112,11 @@ class FloatingLyricsWindow(
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             if (Build.VERSION.SDK_INT >= 30) {
-                setFitInsetsTypes(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
-                setFitInsetsIgnoringVisibility(true)
+                // Use the full display frame so the overlay can reach the status bar.
+                // Android may still restrict cutout placement for application overlays.
+                setFitInsetsTypes(0)
+                layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
             }
         }
 
@@ -147,6 +154,7 @@ class FloatingLyricsWindow(
         remapPending = false
         geometry = null
         position = null
+        wasCameraSplit = false
         val removed = if (view != null) {
             runCatching { windowManager.removeView(view) }.isSuccess
         } else {
@@ -196,6 +204,7 @@ class FloatingLyricsWindow(
 
         return when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                view.removeCallbacks(refreshLayout)
                 gestureActive = true
                 dragging = false
                 startX = p.x
@@ -243,12 +252,14 @@ class FloatingLyricsWindow(
                 }
                 if (!isLocked && dragging) saveDraggedPosition(p)
                 gestureActive = false
+                scheduleLayout()
                 true
             }
 
             MotionEvent.ACTION_CANCEL -> {
                 if (gestureActive) scheduleLayout(remap = true)
                 gestureActive = false
+                scheduleLayout()
                 true
             }
 
@@ -265,6 +276,12 @@ class FloatingLyricsWindow(
     private fun applyStyle(view: TextView) {
         val style = FloatingLyricsStyleStore.getStyle(context)
 
+        (view as? FloatingLyricsTextView)?.apply {
+            cameraSplitEnabled = style.cameraSplitEnabled &&
+                LyricsSettingsStore.getLineDisplayMode(context) == LyricsLineDisplayMode.CURRENT_AND_NEXT
+            outlineWidthPx = style.outlineWidth * resources.displayMetrics.density
+            outlineColor = style.outlineColor
+        }
         view.textSize = style.textSizeSp
         FloatingLyricsFontStore.applyTypeface(
             view,
@@ -272,6 +289,9 @@ class FloatingLyricsWindow(
             style.fontWeight
         )
         view.setTextColor(style.textColor)
+        // Keep the bubble at least one status-bar row tall even for short lyrics.
+        // Text exceeding the minimum continues to expand naturally.
+        view.minHeight = dp(28)
         view.gravity = style.gravity
         view.textAlignment = View.TEXT_ALIGNMENT_GRAVITY
         view.setPadding(
@@ -315,7 +335,7 @@ class FloatingLyricsWindow(
         val p = params ?: return
         runCatching {
             if (remap) applyStyle(view)
-            if (calculateLayout(view, p, remap)) windowManager.updateViewLayout(view, p)
+            if (!gestureActive && calculateLayout(view, p, remap)) windowManager.updateViewLayout(view, p)
         }.onFailure {
             Log.w("FloatingLyricsWindow", "Unable to update overlay geometry", it)
             hideAfterFailure()
@@ -326,12 +346,8 @@ class FloatingLyricsWindow(
     @Suppress("DEPRECATION")
     private fun availableSize(view: View): Pair<Int, Int> {
         if (Build.VERSION.SDK_INT >= 30) {
-            val metrics = windowManager.currentWindowMetrics
-            val insets = metrics.windowInsets.getInsetsIgnoringVisibility(
-                WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout()
-            )
-            return (metrics.bounds.width() - insets.left - insets.right).coerceAtLeast(1) to
-                (metrics.bounds.height() - insets.top - insets.bottom).coerceAtLeast(1)
+            val bounds = windowManager.currentWindowMetrics.bounds
+            return bounds.width().coerceAtLeast(1) to bounds.height().coerceAtLeast(1)
         }
         // Before WindowMetrics, the attached view exposes the display frame fitted by WM.
         // Subtracting rootWindowInsets again would double-count already fitted system bars.
@@ -347,21 +363,44 @@ class FloatingLyricsWindow(
 
     private fun calculateLayout(view: TextView, p: WindowManager.LayoutParams, remap: Boolean): Boolean {
         val (availableWidth, availableHeight) = availableSize(view)
-        val width = FloatingWindowGeometry.width(
+        val splitView = (view as? FloatingLyricsTextView)?.takeIf { it.cameraSplitEnabled }
+        val isSplit = splitView != null
+        val width = if (isSplit) availableWidth else FloatingWindowGeometry.width(
             availableWidth, FloatingLyricsStyleStore.getStyle(context).maxWidthPercent
         )
+        val height = if (isSplit && Build.VERSION.SDK_INT >= 30) {
+            windowManager.currentWindowMetrics.windowInsets
+                .getInsetsIgnoringVisibility(WindowInsets.Type.statusBars()).top.coerceAtLeast(dp(30))
+        } else if (isSplit) dp(30) else 0
+        if (isSplit && !wasCameraSplit) {
+            // Split mode begins at the actual top display edge, not the inset content edge.
+            position = FloatingPosition(0.5f, 0f)
+            FloatingLyricsStyleStore.saveRelativePosition(context, position!!)
+        }
+        wasCameraSplit = isSplit
+        if (splitView != null) {
+            val cutout = if (Build.VERSION.SDK_INT >= 30) {
+                windowManager.currentWindowMetrics.windowInsets.displayCutout
+                    ?.boundingRects?.minByOrNull { kotlin.math.abs(it.centerX() - availableWidth / 2) }
+            } else null
+            splitView.cameraCenterX = cutout?.centerX()?.toFloat() ?: availableWidth / 2f
+            splitView.cameraHalfGap = ((cutout?.width() ?: dp(24)) / 2f + dp(6))
+        }
         if (view.minWidth != width) view.minWidth = width
         if (view.maxWidth != width) view.maxWidth = width
-        if (view.maxHeight != availableHeight) view.maxHeight = availableHeight
+        view.maxHeight = if (isSplit) height else availableHeight
+        view.minHeight = if (isSplit) height else dp(28)
         view.measure(
             View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
-            View.MeasureSpec.makeMeasureSpec(availableHeight, View.MeasureSpec.AT_MOST)
+            View.MeasureSpec.makeMeasureSpec(if (isSplit) height else availableHeight,
+                if (isSplit) View.MeasureSpec.EXACTLY else View.MeasureSpec.AT_MOST)
         )
         val next = FloatingWindowGeometry(availableWidth, availableHeight, width, view.measuredHeight)
         val previous = geometry
         val areaChanged = previous == null || previous.availableWidth != availableWidth ||
             previous.availableHeight != availableHeight
-        if (areaChanged) gestureActive = false
+        // A layout pass during a drag must not cancel the active gesture.
+        if (areaChanged && !gestureActive) dragging = false
         val relative = position ?: run {
             val (x, y) = FloatingLyricsStyleStore.getPosition(context)
             val initial = if (FloatingLyricsStyleStore.hasLegacyPosition(context)) {
@@ -377,7 +416,8 @@ class FloatingLyricsWindow(
         val (x, y) = if (remap || areaChanged || previous.width != width) {
             next.coordinates(relative)
         } else p.x.coerceIn(0, next.travelX) to p.y.coerceIn(0, next.travelY)
-        val changed = p.width != width || p.x != x || p.y != y
+        val changed = p.width != width || p.height != (if (isSplit) height else WindowManager.LayoutParams.WRAP_CONTENT) || p.x != x || p.y != y
+        p.height = if (isSplit) height else WindowManager.LayoutParams.WRAP_CONTENT
         p.width = width
         p.x = x
         p.y = y

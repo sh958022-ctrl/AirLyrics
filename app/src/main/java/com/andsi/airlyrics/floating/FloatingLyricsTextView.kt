@@ -9,9 +9,19 @@ import android.content.res.Configuration
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.RectF
+import android.os.Build
+import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextPaint
+import android.text.TextUtils
+import kotlin.math.min
 import androidx.appcompat.widget.AppCompatTextView
 import androidx.core.graphics.withSave
 import kotlin.math.roundToInt
+
+/** Unambiguous separator between the current and next lyric (newlines remain legal). */
+internal const val CAMERA_SPLIT_SEPARATOR: Char = '\\u0001'
 
 /**
  * Lets the renderer animate lyric glyphs without transforming the floating bubble itself.
@@ -26,6 +36,28 @@ internal class FloatingLyricsTextView(context: Context) : AppCompatTextView(cont
         set(value) { field = value.coerceAtLeast(0f); invalidate() }
     var outlineColor: Int = Color.WHITE
         set(value) { field = value; invalidate() }
+
+    var cameraSplitEnabled: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            splitSlideAnimator?.cancel()
+            splitSlideAnimator = null
+            splitCurrent = ""
+            splitNext = ""
+            slideFraction = 1f
+            invalidate()
+        }
+    var cameraCenterX = 0f
+    var cameraHalfGap = 0f
+    var cameraSideReserveFraction = 0.23f
+    private var splitCurrent = ""
+    private var splitNext = ""
+    private var slidingOldCurrent = ""
+    private var slidingOldNext = ""
+    private var slidingIncomingNext = ""
+    private var slideFraction = 1f
+    private var splitSlideAnimator: ValueAnimator? = null
 
     internal var onWindowConfigurationChanged: (() -> Unit)? = null
 
@@ -109,6 +141,10 @@ internal class FloatingLyricsTextView(context: Context) : AppCompatTextView(cont
     }
 
     override fun onDraw(canvas: Canvas) {
+        if (cameraSplitEnabled && text?.contains(CAMERA_SPLIT_SEPARATOR) == true) {
+            drawCameraSplit(canvas)
+            return
+        }
         if (lyricContentAlpha <= 0f) return
 
         canvas.withSave {
@@ -148,7 +184,112 @@ internal class FloatingLyricsTextView(context: Context) : AppCompatTextView(cont
         }
     }
 
+    private fun drawCameraSplit(canvas: Canvas) {
+        val pair = text.toString().split(CAMERA_SPLIT_SEPARATOR, limit = 2)
+        val current = pair.getOrElse(0) { "" }
+        val next = pair.getOrElse(1) { "" }
+
+        if (current != splitCurrent || next != splitNext) {
+            val advances = splitCurrent.isNotEmpty() && current != splitCurrent &&
+                current == splitNext
+            splitSlideAnimator?.cancel()
+            splitSlideAnimator = null
+            if (advances) {
+                slidingOldCurrent = splitCurrent
+                slidingOldNext = splitNext
+                slidingIncomingNext = next
+                slideFraction = 0f
+                splitSlideAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+                    duration = 260L
+                    interpolator = android.view.animation.DecelerateInterpolator()
+                    addUpdateListener { value ->
+                        slideFraction = value.animatedValue as Float
+                        invalidate()
+                    }
+                    start()
+                }
+            } else {
+                slideFraction = 1f
+            }
+            splitCurrent = current
+            splitNext = next
+        }
+
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val reserve = (w * cameraSideReserveFraction).coerceAtMost(w * 0.32f)
+        val center = cameraCenterX.takeIf { it in 1f..w } ?: w / 2f
+        val gap = cameraHalfGap.coerceAtLeast(resources.displayMetrics.density * 15f)
+        val leftMin = reserve
+        val leftMax = (center - gap).coerceAtLeast(leftMin)
+        val rightMin = (center + gap).coerceAtMost(w - reserve)
+        val rightMax = w - reserve
+        val slotWidth = min(leftMax - leftMin, rightMax - rightMin).toInt().coerceAtLeast(1)
+        val leftCenter = (leftMin + leftMax) / 2f
+        val rightCenter = (rightMin + rightMax) / 2f
+
+        // All moving text is clipped to the free portions of the status bar.
+        // Never paint over the camera hole, clock, or system icon reservations.
+        canvas.withSave {
+            clipRect(leftMin, 0f, rightMax, h)
+            if (Build.VERSION.SDK_INT >= 26) {
+                clipOutRect(RectF(center - gap, 0f, center + gap, h))
+            }
+            if (slideFraction < 1f) {
+                val f = slideFraction
+                drawMovingLyric(this, slidingOldCurrent, leftCenter - slotWidth * f, slotWidth, h, 1f - f)
+                drawMovingLyric(this, slidingOldNext, rightCenter + (leftCenter - rightCenter) * f, slotWidth, h, 1f)
+                drawMovingLyric(this, slidingIncomingNext, rightCenter + slotWidth * (1f - f), slotWidth, h, f)
+            } else {
+                drawMovingLyric(this, current, leftCenter, slotWidth, h, 1f)
+                drawMovingLyric(this, next, rightCenter, slotWidth, h, 0.8f)
+            }
+        }
+    }
+
+    private fun drawMovingLyric(
+        canvas: Canvas, content: String, centerX: Float, slotWidth: Int, heightPx: Float,
+        opacity: Float
+    ) {
+        if (content.isBlank() || opacity <= 0f) return
+        val textPaint = TextPaint(paint).apply {
+            style = Paint.Style.FILL
+            color = Color.argb(
+                (Color.alpha(currentTextColor) * opacity).toInt().coerceIn(0, 255),
+                Color.red(currentTextColor), Color.green(currentTextColor), Color.blue(currentTextColor)
+            )
+        }
+        val layout = StaticLayout.Builder.obtain(content, 0, content.length, textPaint, slotWidth)
+            .setAlignment(Layout.Alignment.ALIGN_CENTER)
+            .setIncludePad(false)
+            .setMaxLines(2)
+            .setEllipsize(TextUtils.TruncateAt.END)
+            .setEllipsizedWidth(slotWidth)
+            .build()
+        canvas.withSave {
+            translate(centerX - slotWidth / 2f, (heightPx - layout.height) / 2f)
+            if (outlineWidthPx > 0f) {
+                textPaint.style = Paint.Style.STROKE
+                textPaint.strokeJoin = Paint.Join.ROUND
+                textPaint.strokeWidth = 2f * outlineWidthPx
+                textPaint.color = Color.argb(
+                    (Color.alpha(outlineColor) * opacity).toInt().coerceIn(0, 255),
+                    Color.red(outlineColor), Color.green(outlineColor), Color.blue(outlineColor)
+                )
+                layout.draw(this)
+                textPaint.style = Paint.Style.FILL
+                textPaint.color = Color.argb(
+                    (Color.alpha(currentTextColor) * opacity).toInt().coerceIn(0, 255),
+                    Color.red(currentTextColor), Color.green(currentTextColor), Color.blue(currentTextColor)
+                )
+            }
+            layout.draw(this)
+        }
+    }
+
     override fun onDetachedFromWindow() {
+        splitSlideAnimator?.cancel()
+        splitSlideAnimator = null
         cancelLyricsTextAnimation()
         setLyricsTextAnimationState(
             alpha = REST_ALPHA,

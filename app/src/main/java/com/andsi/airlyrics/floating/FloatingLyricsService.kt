@@ -52,6 +52,7 @@ open class FloatingLyricsService : Service() {
         textViewProvider = { lyricsView },
         contentModeProvider = { LyricsSettingsStore.getContentDisplayMode(this) },
         lineModeProvider = { LyricsSettingsStore.getLineDisplayMode(this) },
+        cameraSplitEnabledProvider = { FloatingLyricsStyleStore.getStyle(this).cameraSplitEnabled },
         switchAnimationModeProvider = { LyricsSettingsStore.getSwitchAnimationMode(this) },
         wordByWordLyricsEnabledProvider = { LyricsSettingsStore.isWordByWordLyricsEnabled(this) },
         wordByWordHighlightColorProvider = {

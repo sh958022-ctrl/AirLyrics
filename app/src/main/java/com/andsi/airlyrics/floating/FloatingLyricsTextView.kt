@@ -21,7 +21,7 @@ import androidx.core.graphics.withSave
 import kotlin.math.roundToInt
 
 /** Unambiguous separator between the current and next lyric (newlines remain legal). */
-internal const val CAMERA_SPLIT_SEPARATOR: Char = '\\u0001'
+internal const val CAMERA_SPLIT_SEPARATOR: Char = '\u0001'
 
 /**
  * Lets the renderer animate lyric glyphs without transforming the floating bubble itself.

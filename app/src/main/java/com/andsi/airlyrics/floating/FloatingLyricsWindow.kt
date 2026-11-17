@@ -19,6 +19,8 @@ import android.widget.TextView
 import com.andsi.airlyrics.R
 import com.andsi.airlyrics.core.color.AirColorUtils
 import com.andsi.airlyrics.core.model.FloatingPosition
+import com.andsi.airlyrics.core.model.LyricsLineDisplayMode
+import com.andsi.airlyrics.settings.store.LyricsSettingsStore
 import com.andsi.airlyrics.settings.store.FloatingLyricsFontStore
 import com.andsi.airlyrics.settings.store.FloatingLyricsStyleStore
 import kotlin.math.abs
@@ -49,6 +51,7 @@ class FloatingLyricsWindow(
     private var geometry: FloatingWindowGeometry? = null
     private var gestureActive = false
     private var dragging = false
+    private var wasCameraSplit = false
     private var remapPending = false
     private val refreshLayout = Runnable {
         val remap = remapPending
@@ -151,6 +154,7 @@ class FloatingLyricsWindow(
         remapPending = false
         geometry = null
         position = null
+        wasCameraSplit = false
         val removed = if (view != null) {
             runCatching { windowManager.removeView(view) }.isSuccess
         } else {
@@ -273,6 +277,8 @@ class FloatingLyricsWindow(
         val style = FloatingLyricsStyleStore.getStyle(context)
 
         (view as? FloatingLyricsTextView)?.apply {
+            cameraSplitEnabled = style.cameraSplitEnabled &&
+                LyricsSettingsStore.getLineDisplayMode(context) == LyricsLineDisplayMode.CURRENT_AND_NEXT
             outlineWidthPx = style.outlineWidth * resources.displayMetrics.density
             outlineColor = style.outlineColor
         }
@@ -357,15 +363,37 @@ class FloatingLyricsWindow(
 
     private fun calculateLayout(view: TextView, p: WindowManager.LayoutParams, remap: Boolean): Boolean {
         val (availableWidth, availableHeight) = availableSize(view)
-        val width = FloatingWindowGeometry.width(
+        val splitView = (view as? FloatingLyricsTextView)?.takeIf { it.cameraSplitEnabled }
+        val isSplit = splitView != null
+        val width = if (isSplit) availableWidth else FloatingWindowGeometry.width(
             availableWidth, FloatingLyricsStyleStore.getStyle(context).maxWidthPercent
         )
+        val height = if (isSplit && Build.VERSION.SDK_INT >= 30) {
+            windowManager.currentWindowMetrics.windowInsets
+                .getInsetsIgnoringVisibility(WindowInsets.Type.statusBars()).top.coerceAtLeast(dp(30))
+        } else if (isSplit) dp(30) else 0
+        if (isSplit && !wasCameraSplit) {
+            // Split mode begins at the actual top display edge, not the inset content edge.
+            position = FloatingPosition(0.5f, 0f)
+            FloatingLyricsStyleStore.saveRelativePosition(context, position!!)
+        }
+        wasCameraSplit = isSplit
+        if (splitView != null) {
+            val cutout = if (Build.VERSION.SDK_INT >= 30) {
+                windowManager.currentWindowMetrics.windowInsets.displayCutout
+                    ?.boundingRects?.minByOrNull { kotlin.math.abs(it.centerX() - availableWidth / 2) }
+            } else null
+            splitView.cameraCenterX = cutout?.centerX()?.toFloat() ?: availableWidth / 2f
+            splitView.cameraHalfGap = ((cutout?.width() ?: dp(24)) / 2f + dp(6))
+        }
         if (view.minWidth != width) view.minWidth = width
         if (view.maxWidth != width) view.maxWidth = width
-        if (view.maxHeight != availableHeight) view.maxHeight = availableHeight
+        view.maxHeight = if (isSplit) height else availableHeight
+        view.minHeight = if (isSplit) height else dp(28)
         view.measure(
             View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
-            View.MeasureSpec.makeMeasureSpec(availableHeight, View.MeasureSpec.AT_MOST)
+            View.MeasureSpec.makeMeasureSpec(if (isSplit) height else availableHeight,
+                if (isSplit) View.MeasureSpec.EXACTLY else View.MeasureSpec.AT_MOST)
         )
         val next = FloatingWindowGeometry(availableWidth, availableHeight, width, view.measuredHeight)
         val previous = geometry
@@ -388,7 +416,8 @@ class FloatingLyricsWindow(
         val (x, y) = if (remap || areaChanged || previous.width != width) {
             next.coordinates(relative)
         } else p.x.coerceIn(0, next.travelX) to p.y.coerceIn(0, next.travelY)
-        val changed = p.width != width || p.x != x || p.y != y
+        val changed = p.width != width || p.height != (if (isSplit) height else WindowManager.LayoutParams.WRAP_CONTENT) || p.x != x || p.y != y
+        p.height = if (isSplit) height else WindowManager.LayoutParams.WRAP_CONTENT
         p.width = width
         p.x = x
         p.y = y

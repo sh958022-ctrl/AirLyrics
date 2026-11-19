@@ -311,7 +311,7 @@ internal class FloatingPageScope(
         updateFloatingTileSubtitle(host.getString(R.string.ui_skin_preset), localizedPresetTitle(latestStyle.presetName))
         updateFloatingTileSubtitle(host.getString(R.string.ui_text_color), AirColorUtils.colorSummary(latestStyle.textColor))
         updateFloatingTileSubtitle(host.getString(R.string.ui_background_bubble), host.getString(if (latestStyle.backgroundEnabled) R.string.ui_on else R.string.ui_off))
-        updateFloatingTileSubtitle(host.getString(R.string.ui_font_size), "${latestStyle.textSizeSp.toInt()} sp")
+        updateFloatingTileSubtitle(host.getString(R.string.ui_font_size), "${latestStyle.textSizeSp} sp")
         updateFloatingTileSubtitle(host.getString(R.string.ui_font), fontFamilySubtitle(latestStyle.fontFamily))
         updateFloatingTileSubtitle(host.getString(R.string.ui_font_weight), fontWeightSubtitle(latestStyle.fontWeight))
         updateFloatingTileSubtitle(host.getString(R.string.ui_font_opacity), fontOpacitySubtitle(latestStyle.textColor))
@@ -394,7 +394,7 @@ internal class FloatingPageScope(
     internal fun previewFloatingTextSize(textSizeSp: Float) {
         val previewStyle = style().copy(textSizeSp = textSizeSp)
         renderFloatingPreview(previewStyle)
-        updateFloatingTileSubtitle(host.getString(R.string.ui_font_size), "${textSizeSp.toInt()} sp")
+        updateFloatingTileSubtitle(host.getString(R.string.ui_font_size), "${textSizeSp} sp")
     }
 
     internal fun previewFloatingFontWeight(fontWeight: Int) {

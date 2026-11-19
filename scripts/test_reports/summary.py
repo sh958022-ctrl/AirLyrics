@@ -8,6 +8,7 @@ import xml.etree.ElementTree as ET
 def summarize(root):
     totals = dict(suites=0, tests=0, failures=0, errors=0, skipped=0)
     lines = []
+    failures = []
     for path in sorted(Path(root).rglob('TEST-*.xml')):
         document = ET.parse(path).getroot()
         suites = [document] if document.tag == 'testsuite' else document.findall('.//testsuite')
@@ -19,7 +20,13 @@ def summarize(root):
                 count = sum(case.find(kind) is not None for case in cases)
                 totals[{'failure': 'failures', 'error': 'errors', 'skipped': 'skipped'}[kind]] += count
             lines.append(f"- {suite.get('name', path.stem)}: {len(cases)} cases")
-    return totals, lines
+            for case in cases:
+                for kind in ('failure', 'error'):
+                    node = case.find(kind)
+                    if node is not None:
+                        detail = (node.text or '').strip()
+                        failures.append(f"FAILED {case.get('classname', suite.get('name', 'unknown'))}.{case.get('name', 'unknown')} [{kind}]: {node.get('message', '')}\n{detail[:6000]}")
+    return totals, lines, failures
 
 
 def main():
@@ -27,9 +34,11 @@ def main():
     parser.add_argument('root')
     parser.add_argument('--strict', action='store_true', help='Require nonzero tests and no failures/errors/skips')
     args = parser.parse_args()
-    totals, lines = summarize(args.root)
+    totals, lines, failures = summarize(args.root)
     output = f"Test results ({args.root}): {totals}\n" + '\n'.join(lines) + '\n'
-    print(output)
+    if failures:
+        output += '\n' + '\n\n'.join(failures) + '\n'
+    print(output, flush=True)
     if os.environ.get('GITHUB_STEP_SUMMARY'):
         with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as report:
             report.write(output)

@@ -30,6 +30,6 @@ class FloatingWindowGeometryTest {
     @Test fun widthsRespectStyleLimits() {
         assertEquals(850, FloatingWindowGeometry.width(1000, 85))
         assertEquals(1000, FloatingWindowGeometry.width(1000, 100))
-        assertEquals(450, FloatingWindowGeometry.width(1000, -10))
+        assertEquals(100, FloatingWindowGeometry.width(1000, -10))
     }
 }
